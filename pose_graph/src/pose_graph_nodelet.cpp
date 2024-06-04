@@ -43,6 +43,8 @@ int COL;
 std::string VINS_RESULT_PATH;
 int DEBUG_IMAGE;
 int FAST_RELOCALIZATION;
+int USE_PGO;
+int MAX_KF_NUM;
 namespace pose_graph_nodelet_ns {
 class PoseGraphNodelet
     : public nodelet::Nodelet //任何nodelet plugin都要继承Nodelet类。
@@ -124,6 +126,8 @@ private:
       VISUALIZE_IMU_FORWARD = fsSettings["visualize_imu_forward"];
       LOAD_PREVIOUS_POSE_GRAPH = fsSettings["load_previous_pose_graph"];
       FAST_RELOCALIZATION = fsSettings["fast_relocalization"];
+      USE_PGO = fsSettings["use_pgo"];
+      MAX_KF_NUM = fsSettings["max_kf_num"];
       VINS_RESULT_PATH = VINS_RESULT_PATH + "/vins_result_loop.csv";
       std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
       fout.close();
@@ -353,6 +357,7 @@ private:
     loop_info << relative_t.x(), relative_t.y(), relative_t.z(), relative_q.w(),
         relative_q.x(), relative_q.y(), relative_q.z(), relative_yaw;
     posegraph.updateKeyFrameLoop(index, loop_info);
+    // std::cout<<"updateKeyFrameLoop "<<index<<std::endl;
   }
 
   void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg) {

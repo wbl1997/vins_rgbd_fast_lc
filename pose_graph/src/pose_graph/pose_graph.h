@@ -45,6 +45,9 @@ public:
   KeyFrame *getKeyFrame(int index);
   nav_msgs::Path path[10];
   nav_msgs::Path base_path;
+  // add odometry
+  nav_msgs::Odometry pg_odom;
+  
 
   CameraPoseVisualization *posegraph_visualization;
   void savePoseGraph();
@@ -61,6 +64,7 @@ public:
 
 private:
   std::vector<int> generate_weighted_indices(int total_indices, int num_samples);
+  std::vector<int> generate_uniform_indices(int total_indices, int num_samples);
   int detectLoop(KeyFrame *keyframe, int frame_index);
   void addKeyFrameIntoVoc(KeyFrame *keyframe);
   void optimize4DoF();
@@ -86,6 +90,7 @@ private:
   BriefVocabulary *voc{};
 
   ros::Publisher pub_pg_path;
+  ros::Publisher pub_pg_odom;
   ros::Publisher pub_base_path;
   ros::Publisher pub_pose_graph;
   ros::Publisher pub_path[10];
@@ -209,10 +214,10 @@ struct FourDOFError {
 
 struct FourDOFWeightError {
   FourDOFWeightError(double t_x, double t_y, double t_z, double relative_yaw,
-                     double pitch_i, double roll_i)
+                     double pitch_i, double roll_i, double weight=1.0)
       : t_x(t_x), t_y(t_y), t_z(t_z), relative_yaw(relative_yaw),
-        pitch_i(pitch_i), roll_i(roll_i) {
-    weight = 1;
+        pitch_i(pitch_i), roll_i(roll_i), weight(weight) {
+    // weight = 1;
   }
 
   template <typename T>
@@ -244,9 +249,9 @@ struct FourDOFWeightError {
 
   static ceres::CostFunction *
   Create(const double t_x, const double t_y, const double t_z,
-         const double relative_yaw, const double pitch_i, const double roll_i) {
+         const double relative_yaw, const double pitch_i, const double roll_i, const double weight=1.0) {
     return (new ceres::AutoDiffCostFunction<FourDOFWeightError, 4, 1, 3, 1, 3>(
-        new FourDOFWeightError(t_x, t_y, t_z, relative_yaw, pitch_i, roll_i)));
+        new FourDOFWeightError(t_x, t_y, t_z, relative_yaw, pitch_i, roll_i, weight)));
   }
 
   double t_x, t_y, t_z;

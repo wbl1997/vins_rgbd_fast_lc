@@ -13,7 +13,7 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-#define MIN_LOOP_NUM 10
+#define MIN_LOOP_NUM 20
 
 using namespace Eigen;
 using namespace std;

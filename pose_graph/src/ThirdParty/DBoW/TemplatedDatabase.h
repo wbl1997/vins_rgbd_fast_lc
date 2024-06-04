@@ -506,9 +506,28 @@ void TemplatedDatabase<TDescriptor, F>::delete_entry(const EntryId entry_id)
   }
   m_dBowfile[entry_id].clear();
   m_dfile[entry_id].clear();
-  // TODO: use erase to remove the entry from m_dfile and m_dBowfile
+  for(int i=entry_id+1; i<m_nentries; i++)
+  {
+    BowVector v_i = m_dBowfile[i];
+    BowVector::const_iterator vit_i;
+    for (vit_i = v_i.begin(); vit_i != v_i.end(); ++vit_i)
+    {
+      const WordId& word_id = vit_i->first;
+      IFRow& ifrow = m_ifile[word_id];
+      typename IFRow::iterator rit;
+      for (rit = ifrow.begin(); rit != ifrow.end(); ++rit)
+      {
+        if (rit->entry_id == i)
+        {
+          rit->entry_id = i-1;
+        }
+      }
+    }
+  }
   m_dfile.erase(m_dfile.begin() + entry_id);
+  // std::cout<<"m_dBowfile: "<<m_dBowfile[entry_id+1] <<"\n";
   m_dBowfile.erase(m_dBowfile.begin() + entry_id);
+  // std::cout<<"m_dBowfile: "<<m_dBowfile[entry_id] <<"\n";
   m_EntryID_vec.erase(m_EntryID_vec.begin() + entry_id);
   m_nentries--;
 }

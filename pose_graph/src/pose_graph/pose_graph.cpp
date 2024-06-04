@@ -36,6 +36,7 @@ void PoseGraph::setIMUFlag(bool _use_imu) {
 void PoseGraph::registerPub(ros::NodeHandle &n) {
   pub_pg_path =
       n.advertise<nav_msgs::Path>("/pose_graph/pose_graph_path", 1000);
+  pub_pg_odom = n.advertise<nav_msgs::Odometry>("/pose_graph/pose_graph_odom", 1000);
   pub_base_path = n.advertise<nav_msgs::Path>("/pose_graph/base_path", 1000);
   pub_pose_graph = n.advertise<visualization_msgs::MarkerArray>(
       "/pose_graph/pose_graph", 1000);
@@ -51,6 +52,78 @@ void PoseGraph::loadVocabulary(const std::string& voc_path) {
 }
 
 void PoseGraph::addKeyFrame(KeyFrame *cur_kf, bool flag_detect_loop) {
+  // std::cout<< "db size: " << db.size() <<" "<<keyframelist.size()<< std::endl;
+  int max_db_size = MAX_KF_NUM;
+  int sample_size = 2;
+  // std::cout<<"keyframelist.size()0: "<<keyframelist.size()<<std::endl;
+  // std::cout<<"db.size()0: "<<db.size()<<std::endl;
+  // std::cout<<"image_pool.size()0: "<<image_pool.size()<<std::endl;
+  // if(image_pool.size()>1){
+  //   std::cout<<"========================================\n";
+  //   std::cout<<"image_pool.begin(): "<<image_pool.begin()->first<<std::endl;
+  //   std::cout<<"image_pool.end(): "<<(--image_pool.end())->first<<std::endl;
+  //   std::cout<<"keyframelist.begin(): "<< (*keyframelist.begin())->index << std::endl;
+  //   std::cout<<"keyframelist.end(): "<< (*(--keyframelist.end()))->index << std::endl;
+  //   std::cout<<"\n";
+  // }
+
+  if(db.size()%max_db_size==0 && db.size()>0 && true){
+    // std::cout<< "to remove: ";
+    std::vector<int> to_remove_idx = generate_weighted_indices(max_db_size, sample_size);
+    for(int i=sample_size-1; i>=0; i--){
+      image_pool.erase(db.m_EntryID_vec[to_remove_idx[i]]);
+      auto it = keyframelist.begin();
+      std::advance(it, to_remove_idx[i]);
+      while(it!=keyframelist.end()){
+        if((*it)->index == db.m_EntryID_vec[to_remove_idx[i]]){
+          keyframelist.erase(it);
+          break;
+        }
+      }
+      db.delete_entry(to_remove_idx[i]);
+
+      // // std::cout<< to_remove_idx[i] << " ";
+      // db.delete_entry(to_remove_idx[i]);
+
+      // // image_pool[to_remove_idx[i]] delete;
+      // // image_pool.erase(to_remove_idx[i]);
+      // // std::cout<<"to_remove_idx[i]: "<<to_remove_idx[i]<<std::endl;
+      // for(int j=to_remove_idx[i]; j<image_pool.size()-1; j++){
+      //   image_pool[j] = image_pool[j+1];
+      // }
+      // image_pool.erase(image_pool.size()-1);
+      // // std::cout<<"end image_pool: "<<image_pool.end()->first<<std::endl;
+
+      // // std::cout<<"begin delete keyframelist!\n";
+      // // keyframelist[to_remove_idx[i]] delete; list<KeyFrame *> keyframelist;  // TODO wbl
+      // auto it = keyframelist.begin();
+      // std::advance(it, to_remove_idx[i]);
+      // auto next_it = it;
+      // ++next_it;
+      // while (next_it != keyframelist.end()) {
+      //     // std::cout<<"delete keyframelist: "<<(*it)->index<<std::endl;
+      //     // std::cout<<"next keyframelist: "<<(*next_it)->index<<std::endl;
+      //     *it = *next_it;
+      //     (*it)->index--;
+      //     ++it;
+      //     ++next_it;
+      // }
+      // keyframelist.pop_back();
+      // // std::cout<<"end keyframelist: " << keyframelist.back()->index << std::endl;
+      // // std::cout<<"end delete keyframelist!\n";
+      // global_index--;
+      // // std::cout<<"global_index: "<<global_index<<std::endl;
+    }
+    // std::cout<<"db.m_EntryID_vec: ";
+    // for(int i=0; i<db.m_EntryID_vec.size(); i++){
+    //   std::cout<< db.m_EntryID_vec[i] <<" ";
+    // }
+    // std::cout<<std::endl;
+    // db.delete_entry(1);
+    // std::cout<<std::endl;
+  }
+  // std::cout<<"keyframelist.size(): "<<keyframelist.size()<<std::endl;
+
   // shift to base frame (the base(first) frame defined as the map frame)
   Vector3d vio_P_cur;
   Matrix3d vio_R_cur;
@@ -88,7 +161,7 @@ void PoseGraph::addKeyFrame(KeyFrame *cur_kf, bool flag_detect_loop) {
     KeyFrame *old_kf = getKeyFrame(loop_index);
 
     //当前帧与回环候选帧进行描述子匹配
-    std::cout<<"loop index: " << loop_index << std::endl;
+    // std::cout<<"loop index: " << loop_index << std::endl;
     if (cur_kf->findConnection(old_kf)) {
       // earliest_loop_index为最早的回环候选帧
       if (earliest_loop_index > loop_index || earliest_loop_index == -1)
@@ -172,6 +245,10 @@ void PoseGraph::addKeyFrame(KeyFrame *cur_kf, bool flag_detect_loop) {
 
   path[sequence_cnt].poses.push_back(pose_stamped);
   path[sequence_cnt].header = pose_stamped.header;
+  pg_odom.header.stamp = ros::Time(cur_kf->time_stamp);
+  pg_odom.header.frame_id = "map";
+  pg_odom.pose.pose = pose_stamped.pose;
+  pub_pg_odom.publish(pg_odom);
 
   // not used
   if (SAVE_LOOP_PATH) {
@@ -301,13 +378,18 @@ KeyFrame *PoseGraph::getKeyFrame(int index) {
   //    unique_lock<mutex> lock(m_keyframelist);
   list<KeyFrame *>::iterator it = keyframelist.begin();
   for (; it != keyframelist.end(); it++) {
-    if ((*it)->index == index)
+    // std::cout<<"getKeyFrame: "<<(*it)->index<<std::endl;
+    if ((*it)->index == index){
+      // std::cout<<"getKeyFrame: "<<(*it)->index<<std::endl;
       break;
+    }
   }
-  if (it != keyframelist.end())
+  if (it != keyframelist.end()){
     return *it;
-  else
+  }else{
+    std::cout << "can not find key frame " << index << std::endl;
     return NULL;
+  }
 }
 
 std::vector<int> PoseGraph::generate_weighted_indices(int total_indices, int num_samples=50) {
@@ -315,10 +397,11 @@ std::vector<int> PoseGraph::generate_weighted_indices(int total_indices, int num
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
+    double m = 0.8;
     for (int i = 0; i < num_samples; ++i) {
         double uniform_sample = dist(rng);
         // 使用映射函数 x^2 来生成非均匀分布
-        double non_uniform_sample  = std::pow(uniform_sample, 1);
+        double non_uniform_sample  = std::pow(uniform_sample, m);
         // 将非均匀分布的样本映射到总索引范围
         indices[i] = static_cast<int>(non_uniform_sample * total_indices);
     }
@@ -331,7 +414,7 @@ std::vector<int> PoseGraph::generate_weighted_indices(int total_indices, int num
     // 如果采样数不足，重新采样直到满足需求
     while (indices.size() < num_samples) {
         double uniform_sample = dist(rng);
-        double non_uniform_sample = std::pow(uniform_sample, 1);
+        double non_uniform_sample = std::pow(uniform_sample, m);
         int new_index = static_cast<int>(non_uniform_sample * total_indices);
         if (std::find(indices.begin(), indices.end(), new_index) == indices.end()) {
             indices.push_back(new_index);
@@ -340,6 +423,15 @@ std::vector<int> PoseGraph::generate_weighted_indices(int total_indices, int num
 
     std::sort(indices.begin(), indices.end());
 
+    return indices;
+}
+
+std::vector<int> PoseGraph::generate_uniform_indices(int total_indices, int num_samples=50) {
+    std::vector<int> indices(num_samples);
+    double step = static_cast<double>(total_indices) / num_samples;
+    for (int i = 0; i < num_samples; ++i) {
+        indices[i] = static_cast<int>(i * step);
+    }
     return indices;
 }
 
@@ -354,31 +446,17 @@ int PoseGraph::detectLoop(KeyFrame *keyframe, int frame_index) {
             cv::Point2f(10, 10), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255));
     image_pool[frame_index] = compressed_image;
   }
+
   TicToc tmp_t;
   // first query; then add this frame into database!
   QueryResults ret;
   TicToc t_query;
-  db.query(keyframe->brief_descriptors, ret, 4, frame_index - 50);
+  db.query(keyframe->brief_descriptors, ret, 6, db.size()-50);
   // printf("query time: %f", t_query.toc());
   // cout << "Searching for Image " << frame_index << ". " << ret << endl;
 
   TicToc t_add;
   db.add(keyframe->brief_descriptors);
-  std::cout<< "db size: " << db.size() << std::endl;
-  int max_db_size = 300;
-  int sample_size = 50;
-  if(db.size()==max_db_size){
-    std::cout<< "to remove: ";
-    std::vector<int> to_remove_idx = generate_weighted_indices(max_db_size, sample_size);
-    for(int i=sample_size-1; i>=0; i--){
-      std::cout<< to_remove_idx[i] << " ";
-      db.delete_entry(to_remove_idx[i]);
-      // db.delete_entry(i);
-    }
-    // db.delete_entry(1);
-    std::cout<<std::endl;
-  }
-  // std::cout<<"can get here"<<std::endl;
   // printf("add feature time: %f", t_add.toc());
   //------------------------------------------------------------------------------
   //  ret[0] is the nearest neighbour's score. threshold change with neighour
@@ -396,7 +474,8 @@ int PoseGraph::detectLoop(KeyFrame *keyframe, int frame_index) {
   // visual loop result
   if (DEBUG_IMAGE) {
     for (unsigned int i = 0; i < ret.size(); i++) {
-      int tmp_index = ret[i].Id;
+      // int tmp_index = ret[i].Id;
+      int tmp_index = db.m_EntryID_vec[ret[i].Id];
       auto it = image_pool.find(tmp_index);
       cv::Mat tmp_image = (it->second).clone();
       putText(tmp_image,
@@ -413,7 +492,8 @@ int PoseGraph::detectLoop(KeyFrame *keyframe, int frame_index) {
       // if (ret[i].Score > ret[0].Score * 0.3)
       if (ret[i].Score > 0.015) {
         find_loop = true;
-        int tmp_index = ret[i].Id;
+        // int tmp_index = ret[i].Id;
+        int tmp_index = db.m_EntryID_vec[ret[i].Id];
         if (DEBUG_IMAGE && 0) {
           auto it = image_pool.find(tmp_index);
           cv::Mat tmp_image = (it->second).clone();
@@ -436,10 +516,15 @@ int PoseGraph::detectLoop(KeyFrame *keyframe, int frame_index) {
   */
   if (find_loop && frame_index > 50) {
     int min_index = -1;
+    // std::cout<<"ret.size(): " << ret.size() << std::endl;
+    // std::cout<<"keyframelsit_size: " << keyframelist.size() << std::endl;
     for (unsigned int i = 0; i < ret.size(); i++) {
-      if (min_index == -1 || (ret[i].Id < min_index && ret[i].Score > 0.015))
-        min_index = ret[i].Id;
-        // min_index = db.m_EntryID_vec[ret[i].Id];
+      // std::cout<<"ret[i].Id: " << ret[i].Id;
+      // std::cout<< " " << db.m_EntryID_vec[ret[i].Id] << std::endl;
+      // if (min_index == -1 || (ret[i].Id < min_index && ret[i].Score > 0.015))
+      //   min_index = ret[i].Id;
+      if (min_index == -1 || (db.m_EntryID_vec[ret[i].Id] < min_index && ret[i].Score > 0.015))
+        min_index = db.m_EntryID_vec[ret[i].Id];
     }
     return min_index;
   } else
@@ -462,7 +547,7 @@ void PoseGraph::addKeyFrameIntoVoc(KeyFrame *keyframe) {
 }
 
 void PoseGraph::optimize4DoF() {
-  while (true) {
+  while (USE_PGO) {
     int cur_index = -1;
     int first_looped_index = -1;
     m_optimize_buf.lock();
@@ -477,6 +562,10 @@ void PoseGraph::optimize4DoF() {
       TicToc tmp_t;
       m_keyframelist.lock();
       KeyFrame *cur_kf = getKeyFrame(cur_index);
+      if(cur_kf == NULL){
+        m_keyframelist.unlock();
+        continue;
+      }
 
       int max_length = cur_index + 1;
 
@@ -552,10 +641,14 @@ void PoseGraph::optimize4DoF() {
         }
 
         // add loop edge
-
         if ((*it)->has_loop) {
           assert((*it)->loop_index >= first_looped_index);
-          int connected_index = getKeyFrame((*it)->loop_index)->local_index;
+          auto loop_kf = getKeyFrame((*it)->loop_index);
+          if(loop_kf == NULL){
+            continue;
+          }
+          int connected_index = loop_kf->local_index;
+          // int connected_index = getKeyFrame((*it)->loop_index)->local_index;
           Vector3d euler_conncected =
               Utility::R2ypr(q_array[connected_index].toRotationMatrix());
           Vector3d relative_t;
@@ -563,10 +656,10 @@ void PoseGraph::optimize4DoF() {
           double relative_yaw = (*it)->getLoopRelativeYaw();
           ceres::CostFunction *cost_function = FourDOFWeightError::Create(
               relative_t.x(), relative_t.y(), relative_t.z(), relative_yaw,
-              euler_conncected.y(), euler_conncected.z());
+              euler_conncected.y(), euler_conncected.z(), 0.2);
           problem.AddResidualBlock(
               cost_function, loss_function, euler_array[connected_index],
-              t_array[connected_index], euler_array[i], t_array[i]);
+              t_array[connected_index], euler_array[i], t_array[i]); // TODO wbl: adaptively weight
         }
 
         if ((*it)->index == cur_index)
@@ -836,6 +929,16 @@ void PoseGraph::updatePath() {
     pose_stamped.pose.orientation.z = Q.z();
     pose_stamped.pose.orientation.w = Q.w();
 
+    pg_odom.header.stamp = ros::Time((*it)->time_stamp);
+    pg_odom.header.frame_id = "map";
+    pg_odom.pose.pose.position.x = P.x() + VISUALIZATION_SHIFT_X;
+    pg_odom.pose.pose.position.y = P.y() + VISUALIZATION_SHIFT_Y;
+    pg_odom.pose.pose.position.z = P.z();
+    pg_odom.pose.pose.orientation.x = Q.x();
+    pg_odom.pose.pose.orientation.y = Q.y();
+    pg_odom.pose.pose.orientation.z = Q.z();
+    pg_odom.pose.pose.orientation.w = Q.w();
+
     if ((*it)->sequence == 0) {
       base_path.poses.push_back(pose_stamped);
       base_path.header = pose_stamped.header;
@@ -897,6 +1000,7 @@ void PoseGraph::updatePath() {
     }
   }
   publish();
+  pub_pg_odom.publish(pg_odom);
   m_keyframelist.unlock();
 }
 
@@ -1116,12 +1220,23 @@ void PoseGraph::publish() {
 
 void PoseGraph::updateKeyFrameLoop(int index,
                                    Eigen::Matrix<double, 8, 1> &_loop_info) {
+  // std::cout<<"updateKeyFrameLoop0: " << index << std::endl;
   KeyFrame *kf = getKeyFrame(index);
+  if(kf == nullptr){
+    std::cout<< "kf is nullptr" << std::endl;
+    return;
+  }
+  // std::cout<<"updateKeyFrameLoop0: " << index <<"----"<<kf->loop_index<<std::endl;
   kf->updateLoop(_loop_info);
   if (abs(_loop_info(7)) < 30.0 &&
       Vector3d(_loop_info(0), _loop_info(1), _loop_info(2)).norm() < 20.0) {
     if (FAST_RELOCALIZATION) {
       KeyFrame *old_kf = getKeyFrame(kf->loop_index);
+      if(old_kf == nullptr){
+        std::cout<< "old_kf is nullptr" << std::endl;
+        return;
+      }
+      // std::cout<<"updateKeyFrameLoop1: " << index << std::endl;
       Vector3d w_P_old, w_P_cur, vio_P_cur;
       Matrix3d w_R_old, w_R_cur, vio_R_cur;
       old_kf->getPose(w_P_old, w_R_old);
